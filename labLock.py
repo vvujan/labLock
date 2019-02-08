@@ -4,16 +4,23 @@ import json
 import paho.mqtt.client as mqtt
 import paho.mqtt.publish as publish
 import time
+import commands
 
-broker = "BROKER IP/ADDR"
-username = "MQTT USER"
-password = "MQTT PASS"
+#need to add:
+#	#Registration,#unlock,log
+
+
+doorInput = ""
+broker = "" #add broker here - example: "mqtt.hacklabos.org"
+username = "" #add username here
+password = "" #add password here
 inTopic = "/door/rfid"
 outTopic = "/door/lock"
 configFile = "labLock.conf"
 timestamp = 0
-doorInput = ""
 
+
+#MQTT
 def on_connect(client, userdata, flags, rc):
     print("Connected with result code "+str(rc))
     client.subscribe(inTopic)
@@ -31,8 +38,10 @@ client.on_connect = on_connect
 client.on_message = on_message
 client.connect(broker, 1883, 60)
 
-def unlock():
+def unlock(userName, userId):
 	client.publish(outTopic,"4")
+	#commands.getoutput('mpc play') #optional - enable mpc player
+	#commands.getoutput('scripts/smart_lock_log.sh ' + userName + ' ' + userId) #optional - call script for the logging data
 
 def epoch():
 	epochTime = int(time.time())
@@ -41,37 +50,40 @@ def epoch():
 def addUser(doorInput):
 	with open(configFile) as json_file:
 		data = json.load(json_file)
-		newUser = "user" + str(len(data['lock']) +1)
-		data["lock"].append({newUser : "addedbyKey", 'isAdmin': False, 'key': doorInput})
+		cardId = str(len(data['lock']) +1)
+		data["lock"].append({"id": cardId, "user" : "addedbyKey", 'isAdmin': False, 'key': doorInput})
 		with open(configFile, 'w') as f:
 			json.dump(data, f)
 
 def keyEval(doorInput):
-	with open(configFile) as json_file:  
+	loopState	=	False
+	with open(configFile) as json_file:
 		data = json.load(json_file)
 	for p in data['lock']:
-		listItem = p['key']
+		cardKey = p['key']
+		userId = p['id']
 		isAdmin = p ['isAdmin']
+		userName = p['user']
 
-		if doorInput == listItem and isAdmin == True:
-			unlock()
+		if doorInput == cardKey and isAdmin == True:
+			unlock(userName, userId)
 			global timestamp
-			global found 
 			timestamp = epoch()
+			global found 
 			found = True
 			print "admin"
 			break
-		elif doorInput == listItem and isAdmin == False:
-			unlock()
+		elif doorInput == cardKey and isAdmin == False:
+			unlock(userName, userId)
 			found = True
 			timestamp = 0
 			print "user"
 			break
-		elif doorInput != listItem:
+		elif doorInput != cardKey:
 			found = False
 	if timestamp >= int(time.time()) - 5 and found == False: 
 		addUser(doorInput)
 		timestamp = 0
-		print str(doorInput) + " key added"
+		print str (doorInput) + " key added"
 
 client.loop_forever()
